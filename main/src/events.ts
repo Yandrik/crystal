@@ -8,7 +8,7 @@ import { panelManager } from './services/panelManager';
 import { terminalPanelManager } from './services/terminalPanelManager';
 import type { ToolPanel, CodexPanelState, ClaudePanelState, BaseAIPanelState, PanelStatus } from '../../shared/types/panels';
 import type { ClaudePanelManager } from './services/panels/claude/claudePanelManager';
-import type { SessionOutput } from './types/session';
+import type { SessionOutput, Session } from './types/session';
 import {
   validateSessionExists,
   validateEventContext,

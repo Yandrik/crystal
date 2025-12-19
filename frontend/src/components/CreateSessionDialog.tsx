@@ -1175,16 +1175,6 @@ export function CreateSessionDialog({
                   })}
                 </div>
               </div>
-                        <Code2 className={`w-5 h-5 ${selectedTools.codex ? 'text-interactive' : 'text-text-tertiary'}`} />
-                        <div>
-                          <span className={`text-sm font-medium block ${selectedTools.codex ? 'text-interactive' : ''}`}>Codex</span>
-                          <span className="text-xs opacity-75">Multi-model AI</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                </div>
-              </div>
               
               {/* Tool-specific configuration */}
               {selectedTools.claude && (
