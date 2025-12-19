@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { API } from '../utils/api';
 import type { CreateSessionRequest } from '../types/session';
 import type { Project } from '../types/project';
+import type { CustomToolSetup } from '../types/config';
 import { useErrorStore } from '../stores/errorStore';
 import { Sparkles, GitBranch, ChevronRight, ChevronDown, Brain, X, FileText, Paperclip, Code2, Settings2 } from 'lucide-react';
 import FilePathAutocomplete from './FilePathAutocomplete';
@@ -15,6 +16,7 @@ import { ClaudeCodeConfigComponent, type ClaudeCodeConfig } from './dialog/Claud
 import { CodexConfigComponent, type CodexConfig } from './dialog/CodexConfig';
 import { DEFAULT_CODEX_MODEL, type OpenAICodexModel } from '../../../shared/types/models';
 import { useSessionPreferencesStore, type SessionCreationPreferences } from '../stores/sessionPreferencesStore';
+import { useConfigStore } from '../stores/configStore';
 
 // Interface for branch information
 interface BranchInfo {
@@ -91,9 +93,14 @@ export function CreateSessionDialog({
 }: CreateSessionDialogProps) {
   const [sessionName, setSessionName] = useState<string>(initialSessionName || '');
   const [sessionCount, setSessionCount] = useState<number>(1);
-  const [selectedTools, setSelectedTools] = useState<{ claude: boolean; codex: boolean }>({
+  const [selectedTools, setSelectedTools] = useState<{ 
+    claude: boolean; 
+    codex: boolean;
+    custom: { [setupId: string]: boolean };
+  }>({
     claude: initialToolType === 'claude' || !!initialPrompt,
-    codex: initialToolType === 'codex'
+    codex: initialToolType === 'codex',
+    custom: {}
   });
   const [sharedPrompt, setSharedPrompt] = useState<string>(initialPrompt || '');
   const [claudeConfig, setClaudeConfig] = useState<ClaudeCodeConfig>({
@@ -139,6 +146,15 @@ export function CreateSessionDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showError } = useErrorStore();
   const { preferences, loadPreferences, updatePreferences } = useSessionPreferencesStore();
+  const { config } = useConfigStore();
+  const customToolSetups = config?.customToolSetups || [];
+
+  // Helper function to check if any tool is selected
+  const hasAnyToolSelected = useCallback(() => {
+    return selectedTools.claude || 
+           selectedTools.codex || 
+           Object.values(selectedTools.custom).some(v => v);
+  }, [selectedTools]);
 
   const syncPromptAcrossConfigs = useCallback((newPrompt: string) => {
     setSharedPrompt(newPrompt);
@@ -319,7 +335,11 @@ export function CreateSessionDialog({
     await updatePreferences(updates);
   }, [updatePreferences]);
 
-  const persistSelectedToolsPreference = useCallback((tools: { claude: boolean; codex: boolean }) => {
+  const persistSelectedToolsPreference = useCallback((tools: { 
+    claude: boolean; 
+    codex: boolean;
+    custom?: { [setupId: string]: boolean };
+  }) => {
     const nextToolType: SessionCreationPreferences['toolType'] = tools.claude && tools.codex
       ? 'none'
       : tools.claude
@@ -545,10 +565,10 @@ export function CreateSessionDialog({
 
     // Check if session name is required
     // Session name is always required when no tools are selected OR when there's no API key
-    if (!sessionName && (!hasApiKey || (!selectedTools.claude && !selectedTools.codex))) {
+    if (!sessionName && (!hasApiKey || !hasAnyToolSelected())) {
       showError({
         title: 'Session Name Required',
-        error: !selectedTools.claude && !selectedTools.codex
+        error: !hasAnyToolSelected()
           ? 'Please provide a session name when creating a session without AI tools.'
           : 'Please provide a session name or add an Anthropic API key in Settings to enable auto-naming.'
       });
@@ -623,13 +643,23 @@ export function CreateSessionDialog({
       }
 
       // Determine which tools to create sessions for
-      const toolsToCreate: Array<'claude' | 'codex' | 'none'> = [];
-      if (selectedTools.claude) toolsToCreate.push('claude');
-      if (selectedTools.codex) toolsToCreate.push('codex');
+      const toolsToCreate: Array<{ type: 'claude' | 'codex' | 'none'; customSetupId?: string }> = [];
+      if (selectedTools.claude) toolsToCreate.push({ type: 'claude' });
+      if (selectedTools.codex) toolsToCreate.push({ type: 'codex' });
+      
+      // Add custom setups
+      Object.entries(selectedTools.custom).forEach(([setupId, isSelected]) => {
+        if (isSelected) {
+          const setup = customToolSetups.find(s => s.id === setupId);
+          if (setup) {
+            toolsToCreate.push({ type: setup.basedOn, customSetupId: setupId });
+          }
+        }
+      });
 
       // If no tools selected, create a session with no agent
       if (toolsToCreate.length === 0) {
-        toolsToCreate.push('none');
+        toolsToCreate.push({ type: 'none' });
       }
 
       // Generate session name ONCE if not provided and we have API key + prompt
@@ -691,16 +721,23 @@ export function CreateSessionDialog({
       }
 
       // Create sessions for each selected tool
-      for (const toolType of toolsToCreate) {
+      for (const toolInfo of toolsToCreate) {
+        const toolType = toolInfo.type;
+        const customSetup = toolInfo.customSetupId 
+          ? customToolSetups.find(s => s.id === toolInfo.customSetupId)
+          : undefined;
+        
         // Prepare tool-specific prompt
         let toolPrompt = finalPrompt;
         let toolPermissionMode: 'ignore' | 'approve' = 'ignore';
 
         if (toolType === 'claude') {
-          if (claudeConfig.ultrathink && toolPrompt) {
+          // Use custom setup config or default config
+          const effectiveConfig = customSetup?.config || claudeConfig;
+          if (effectiveConfig.ultrathink && toolPrompt) {
             toolPrompt += '\nultrathink';
           }
-          toolPermissionMode = claudeConfig.permissionMode;
+          toolPermissionMode = effectiveConfig.permissionMode || claudeConfig.permissionMode;
         } else if (toolType === 'codex') {
           toolPermissionMode = formData.permissionMode || 'ignore';
         } else if (toolType === 'none') {
@@ -710,11 +747,18 @@ export function CreateSessionDialog({
 
         // Determine session name:
         // - If multiple tools selected, add tool prefix (e.g., 'CC-' for Claude Code or 'CX-' for Codex)
+        // - For custom setups, use the first 2-3 letters of the setup name as prefix
         // - If both sessionCount > 1 AND multiple tools, the count suffix will be added by taskQueue
         let finalSessionName: string | undefined;
         if (baseSessionName) {
           if (toolsToCreate.length > 1) {
-            const prefix = toolType === 'claude' ? 'CC' : toolType === 'codex' ? 'CX' : toolType;
+            let prefix: string;
+            if (customSetup) {
+              // Use first 2-3 letters of custom setup name as prefix
+              prefix = customSetup.name.substring(0, Math.min(3, customSetup.name.length)).toUpperCase();
+            } else {
+              prefix = toolType === 'claude' ? 'CC' : toolType === 'codex' ? 'CX' : toolType;
+            }
             finalSessionName = `${prefix}-${baseSessionName}`;
           } else {
             finalSessionName = baseSessionName;
@@ -725,6 +769,8 @@ export function CreateSessionDialog({
           sessionName: finalSessionName || '(auto-generate)',
           count: sessionCount,
           toolType,
+          customSetupId: customSetup?.id,
+          customSetupName: customSetup?.name,
           prompt: toolPrompt || '(no prompt)',
           folderId
         });
@@ -734,6 +780,7 @@ export function CreateSessionDialog({
           worktreeTemplate: finalSessionName,
           count: sessionCount,
           toolType,
+          customToolSetupId: customSetup?.id,
           permissionMode: toolPermissionMode,
           projectId,
           folderId, // Pass the folder ID to assign sessions to the folder
@@ -741,17 +788,17 @@ export function CreateSessionDialog({
           commitModeSettings: JSON.stringify(commitModeSettings),
           baseBranch: formData.baseBranch,
           codexConfig: toolType === 'codex' ? {
-            model: codexConfig.model,
-            modelProvider: codexConfig.modelProvider,
+            model: customSetup?.config?.modelProvider ? customSetup.config.modelProvider : codexConfig.model,
+            modelProvider: customSetup?.config?.modelProvider || codexConfig.modelProvider,
             approvalPolicy: 'auto',
-            sandboxMode: codexConfig.sandboxMode,
-            webSearch: codexConfig.webSearch,
-            thinkingLevel: codexConfig.thinkingLevel
+            sandboxMode: customSetup?.config?.sandboxMode || codexConfig.sandboxMode,
+            webSearch: customSetup?.config?.webSearch ?? codexConfig.webSearch,
+            thinkingLevel: customSetup?.config?.thinkingLevel || codexConfig.thinkingLevel
           } : undefined,
           claudeConfig: toolType === 'claude' ? {
-            model: claudeConfig.model,
-            permissionMode: claudeConfig.permissionMode,
-            ultrathink: claudeConfig.ultrathink
+            model: customSetup?.config?.model || claudeConfig.model,
+            permissionMode: customSetup?.config?.permissionMode || claudeConfig.permissionMode,
+            ultrathink: customSetup?.config?.ultrathink ?? claudeConfig.ultrathink
           } : undefined
         });
 
@@ -814,7 +861,7 @@ export function CreateSessionDialog({
                 {/* Session Name */}
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1">
-                    Session Name {(!selectedTools.claude && !selectedTools.codex) || !hasApiKey ? '(Required)' : '(Optional)'}
+                    Session Name {!hasAnyToolSelected() || !hasApiKey ? '(Required)' : '(Optional)'}
                   </label>
                   <div className="flex gap-2">
                     <Input
@@ -872,14 +919,14 @@ export function CreateSessionDialog({
                     </Button>
                   )}
                 </div>
-                  {!sessionName && (!hasApiKey || (!selectedTools.claude && !selectedTools.codex)) && (
+                  {!sessionName && (!hasApiKey || !hasAnyToolSelected()) && (
                   <p className="text-xs text-status-warning mt-1">
-                    {(!selectedTools.claude && !selectedTools.codex)
+                    {!hasAnyToolSelected()
                       ? 'Session name is required when creating sessions without AI tools.'
                       : 'Session name is required. Add an Anthropic API key in Settings to enable AI-powered auto-naming.'}
                   </p>
                 )}
-                  {!worktreeError && (sessionName || (hasApiKey && (selectedTools.claude || selectedTools.codex))) && (
+                  {!worktreeError && (sessionName || (hasApiKey && hasAnyToolSelected())) && (
                   <p className="text-xs text-text-tertiary mt-1">
                     The name for your session and worktree folder.
                   </p>
@@ -968,19 +1015,19 @@ export function CreateSessionDialog({
                     value={sharedPrompt}
                     onChange={(value) => syncPromptAcrossConfigs(value)}
                     projectId={projectId?.toString()}
-                    placeholder={!selectedTools.claude && !selectedTools.codex ? "Prompt disabled (no AI tools selected)" : "Describe your task... (use @ to reference files)"}
+                    placeholder={!hasAnyToolSelected() ? "Prompt disabled (no AI tools selected)" : "Describe your task... (use @ to reference files)"}
                     className="w-full px-3 py-2 pr-10 border border-border-primary rounded-md focus:outline-none focus:ring-2 focus:ring-interactive text-text-primary bg-surface-secondary placeholder-text-tertiary"
                     isTextarea={true}
                     rows={3}
                     onPaste={handlePaste}
-                    disabled={!selectedTools.claude && !selectedTools.codex}
+                    disabled={!hasAnyToolSelected()}
                   />
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="absolute bottom-2 right-2 p-1.5 rounded hover:bg-surface-hover transition-colors"
                     title="Attach images"
-                    disabled={!selectedTools.claude && !selectedTools.codex}
+                    disabled={!hasAnyToolSelected()}
                   >
                     <Paperclip className="w-4 h-4 text-text-tertiary hover:text-text-secondary" />
                   </button>
@@ -1083,6 +1130,49 @@ export function CreateSessionDialog({
                       </div>
                     </div>
                   </Card>
+
+                  {/* Custom Tool Setups */}
+                  {customToolSetups.map(setup => {
+                    const isSelected = selectedTools.custom[setup.id] || false;
+                    const Icon = setup.basedOn === 'claude' ? Brain : Code2;
+                    return (
+                      <Card
+                        key={setup.id}
+                        variant={isSelected ? 'interactive' : 'bordered'}
+                        padding="sm"
+                        className={`relative cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-interactive bg-interactive/10'
+                            : ''
+                        }`}
+                        onClick={() => {
+                          setSelectedTools(prev => ({
+                            ...prev,
+                            custom: {
+                              ...prev.custom,
+                              [setup.id]: !isSelected
+                            }
+                          }));
+                        }}
+                      >
+                        <div className="flex items-center gap-3 py-2 px-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}}
+                            className="w-4 h-4 rounded border-border-primary text-interactive focus:ring-2 focus:ring-interactive"
+                          />
+                          <div className="flex items-center gap-2 flex-1">
+                            <Icon className={`w-5 h-5 ${isSelected ? 'text-interactive' : 'text-text-tertiary'}`} />
+                            <div>
+                              <span className={`text-sm font-medium block ${isSelected ? 'text-interactive' : ''}`}>{setup.name}</span>
+                              <span className="text-xs opacity-75">Custom {setup.basedOn === 'claude' ? 'Claude' : 'Codex'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
                 </div>
               </div>
               
@@ -1146,7 +1236,7 @@ export function CreateSessionDialog({
                 </Card>
               )}
 
-              {!selectedTools.claude && !selectedTools.codex && (
+              {!hasAnyToolSelected() && (
                 <Card variant="bordered" className="p-4 text-center text-text-tertiary">
                   <p className="text-sm">No AI tools selected. The session will be created without an AI agent.</p>
                   <p className="text-xs mt-2 opacity-75">You can use the terminal and git features without an AI assistant.</p>
@@ -1346,21 +1436,21 @@ export function CreateSessionDialog({
             disabled={
               isSubmitting ||
               !!worktreeError ||
-              (!sessionName && (!hasApiKey || (!selectedTools.claude && !selectedTools.codex)))
+              (!sessionName && (!hasApiKey || !hasAnyToolSelected()))
             }
             loading={isSubmitting}
             title={
               isSubmitting ? 'Creating session...' :
               worktreeError ? 'Please fix the session name error' :
-              (!sessionName && (!hasApiKey || (!selectedTools.claude && !selectedTools.codex))) ?
-                (!selectedTools.claude && !selectedTools.codex)
+              (!sessionName && (!hasApiKey || !hasAnyToolSelected())) ?
+                (!hasAnyToolSelected())
                   ? 'Please enter a session name (required for sessions without AI tools)'
                   : 'Please enter a session name (required without API key)' :
               undefined
             }
           >
             {isSubmitting ? 'Creating...' : (() => {
-              const toolCount = Math.max(1, (selectedTools.claude ? 1 : 0) + (selectedTools.codex ? 1 : 0));
+              const toolCount = Math.max(1, (selectedTools.claude ? 1 : 0) + (selectedTools.codex ? 1 : 0) + Object.values(selectedTools.custom).filter(v => v).length);
               const totalSessions = toolCount * sessionCount;
               return `Create ${totalSessions > 1 ? totalSessions + ' Sessions' : 'Session'}`;
             })()}

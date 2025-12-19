@@ -69,6 +69,28 @@ export interface AppConfig {
     posthogHost?: string;
     distinctId?: string; // Random UUID for anonymous user identification
   };
+  // Custom tool setups
+  customToolSetups?: CustomToolSetup[];
+}
+
+export interface CustomToolSetup {
+  id: string; // Unique identifier
+  name: string; // Display name (e.g., "ZClaude")
+  basedOn: 'claude' | 'codex'; // Which tool this is based on
+  executablePath?: string; // Custom executable path
+  environmentVariables?: { [key: string]: string }; // Custom env vars
+  config?: {
+    // Claude-specific
+    model?: 'auto' | 'sonnet' | 'opus' | 'haiku';
+    permissionMode?: 'ignore' | 'approve';
+    ultrathink?: boolean;
+    // Codex-specific
+    modelProvider?: string;
+    approvalPolicy?: 'auto' | 'manual';
+    sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access';
+    webSearch?: boolean;
+    thinkingLevel?: 'low' | 'medium' | 'high';
+  };
 }
 
 export interface UpdateConfigRequest {
@@ -127,4 +149,6 @@ export interface UpdateConfigRequest {
     posthogHost?: string;
     distinctId?: string; // Random UUID for anonymous user identification
   };
+  // Custom tool setups
+  customToolSetups?: CustomToolSetup[];
 }

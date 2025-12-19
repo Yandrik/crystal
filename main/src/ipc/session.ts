@@ -150,7 +150,8 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           request.commitModeSettings,
           request.codexConfig,
           request.claudeConfig,
-          request.folderId
+          request.folderId,
+          request.customToolSetupId
         );
 
         // Note: Model is now stored at panel level, not session level
@@ -169,7 +170,8 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           commitMode: request.commitMode,
           commitModeSettings: request.commitModeSettings,
           codexConfig: request.codexConfig,
-          claudeConfig: request.claudeConfig
+          claudeConfig: request.claudeConfig,
+          customToolSetupId: request.customToolSetupId
         });
 
         // Note: Model is now stored at panel level, not session level
