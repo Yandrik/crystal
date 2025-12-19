@@ -64,6 +64,7 @@ export interface CreateSessionRequest {
   autoCommit?: boolean;
   model?: string;
   toolType?: 'claude' | 'codex' | 'none';
+  customToolSetupId?: string; // ID of custom tool setup to use
   commitMode?: 'structured' | 'checkpoint' | 'disabled';
   commitModeSettings?: string; // JSON string of CommitModeSettings
   codexConfig?: {

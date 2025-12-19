@@ -16,7 +16,9 @@ import {
   RefreshCw,
   FileText,
   Eye,
-  BarChart3
+  BarChart3,
+  Code2,
+  Settings2
 } from 'lucide-react';
 import { Input, Textarea, Checkbox } from './ui/Input';
 import { Button } from './ui/Button';
@@ -51,9 +53,10 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'analytics' | 'stravu'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'analytics' | 'stravu' | 'custom-tools'>('general');
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
   const [previousAnalyticsEnabled, setPreviousAnalyticsEnabled] = useState(true);
+  const [customToolSetups, setCustomToolSetups] = useState<import('../types/config').CustomToolSetup[]>([]);
   const { updateSettings } = useNotifications();
   const { theme, toggleTheme } = useTheme();
   const { fetchConfig: refreshConfigStore } = useConfigStore();
@@ -98,6 +101,9 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
         setAnalyticsEnabled(enabled);
         setPreviousAnalyticsEnabled(enabled);
       }
+
+      // Load custom tool setups
+      setCustomToolSetups(data.customToolSetups || []);
     } catch (err) {
       setError('Failed to load configuration');
     }
@@ -145,7 +151,8 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
         notifications: notificationSettings,
         analytics: {
           enabled: analyticsEnabled
-        }
+        },
+        customToolSetups
       });
 
       if (!response.success) {
@@ -219,6 +226,16 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
             }`}
           >
             Stravu Integration
+          </button>
+          <button
+            onClick={() => setActiveTab('custom-tools')}
+            className={`px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'custom-tools'
+                ? 'text-interactive border-b-2 border-interactive bg-interactive/5'
+                : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'
+            }`}
+          >
+            Custom Tools
           </button>
         </div>
 
@@ -683,10 +700,188 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
             </CollapsibleCard>
           </div>
         )}
+
+        {activeTab === 'custom-tools' && (
+          <div className="space-y-6">
+            {/* Custom Tool Setups Introduction */}
+            <CollapsibleCard
+              title="Custom Tool Setups"
+              subtitle="Create custom configurations of Claude and Codex with custom environment variables"
+              icon={<Code2 className="w-5 h-5" />}
+              defaultExpanded={true}
+            >
+              <div className="space-y-4">
+                <p className="text-sm text-text-secondary leading-relaxed">
+                  Custom tool setups allow you to create specialized versions of Claude Code or Codex with custom API endpoints, environment variables, and configurations. This is useful for:
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="p-3 bg-surface-tertiary rounded-lg">
+                    <h4 className="font-medium text-text-primary mb-1">🔧 Custom APIs</h4>
+                    <p className="text-text-tertiary">Point to self-hosted or alternative API endpoints</p>
+                  </div>
+                  <div className="p-3 bg-surface-tertiary rounded-lg">
+                    <h4 className="font-medium text-text-primary mb-1">🌍 Different Environments</h4>
+                    <p className="text-text-tertiary">Separate development, staging, and production configs</p>
+                  </div>
+                  <div className="p-3 bg-surface-tertiary rounded-lg">
+                    <h4 className="font-medium text-text-primary mb-1">⚙️ Custom Settings</h4>
+                    <p className="text-text-tertiary">Pre-configure model preferences and security modes</p>
+                  </div>
+                  <div className="p-3 bg-surface-tertiary rounded-lg">
+                    <h4 className="font-medium text-text-primary mb-1">🎯 Team Workflows</h4>
+                    <p className="text-text-tertiary">Share configurations across your team</p>
+                  </div>
+                </div>
+              </div>
+            </CollapsibleCard>
+
+            {/* Custom Tool Setup List */}
+            <CollapsibleCard
+              title="Your Custom Setups"
+              subtitle={`${customToolSetups.length} custom ${customToolSetups.length === 1 ? 'setup' : 'setups'} configured`}
+              icon={<Settings2 className="w-5 h-5" />}
+              defaultExpanded={true}
+            >
+              <div className="space-y-3">
+                {customToolSetups.length === 0 ? (
+                  <div className="text-center py-8 text-text-tertiary">
+                    <p className="text-sm mb-4">No custom tool setups yet</p>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        const newSetup: import('../types/config').CustomToolSetup = {
+                          id: `custom-${Date.now()}`,
+                          name: 'My Custom Setup',
+                          basedOn: 'claude',
+                          environmentVariables: {},
+                          config: {}
+                        };
+                        setCustomToolSetups([...customToolSetups, newSetup]);
+                      }}
+                    >
+                      Create Your First Custom Setup
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {customToolSetups.map((setup, index) => (
+                      <div key={setup.id} className="p-4 bg-surface-secondary rounded-lg border border-border-secondary">
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <Input
+                              label="Display Name"
+                              value={setup.name}
+                              onChange={(e) => {
+                                const updated = [...customToolSetups];
+                                updated[index] = { ...setup, name: e.target.value };
+                                setCustomToolSetups(updated);
+                              }}
+                              placeholder="e.g., ZClaude"
+                              fullWidth
+                            />
+                            <div>
+                              <label className="block text-sm font-medium text-text-secondary mb-1">Based On</label>
+                              <select
+                                value={setup.basedOn}
+                                onChange={(e) => {
+                                  const updated = [...customToolSetups];
+                                  updated[index] = { ...setup, basedOn: e.target.value as 'claude' | 'codex' };
+                                  setCustomToolSetups(updated);
+                                }}
+                                className="w-full px-3 py-2 bg-surface-primary border border-border-primary rounded text-text-primary"
+                              >
+                                <option value="claude">Claude Code</option>
+                                <option value="codex">Codex</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <Input
+                            label="Custom Executable Path (optional)"
+                            value={setup.executablePath || ''}
+                            onChange={(e) => {
+                              const updated = [...customToolSetups];
+                              updated[index] = { ...setup, executablePath: e.target.value };
+                              setCustomToolSetups(updated);
+                            }}
+                            placeholder={`/path/to/custom-${setup.basedOn}`}
+                            fullWidth
+                            helperText="Leave empty to use the default executable"
+                          />
+
+                          <div>
+                            <label className="block text-sm font-medium text-text-secondary mb-1">
+                              Environment Variables
+                            </label>
+                            <Textarea
+                              value={Object.entries(setup.environmentVariables || {})
+                                .map(([key, value]) => `${key}=${value}`)
+                                .join('\n')}
+                              onChange={(e) => {
+                                const envVars: { [key: string]: string } = {};
+                                e.target.value.split('\n').forEach(line => {
+                                  const [key, ...valueParts] = line.split('=');
+                                  if (key && valueParts.length > 0) {
+                                    envVars[key.trim()] = valueParts.join('=').trim();
+                                  }
+                                });
+                                const updated = [...customToolSetups];
+                                updated[index] = { ...setup, environmentVariables: envVars };
+                                setCustomToolSetups(updated);
+                              }}
+                              placeholder="ANTHROPIC_API_KEY=your-key&#10;API_URL=https://api.example.com"
+                              rows={4}
+                              className="font-mono text-xs"
+                            />
+                            <p className="text-xs text-text-tertiary mt-1">
+                              One per line in KEY=value format. Example: ANTHROPIC_API_KEY=sk-ant-...
+                            </p>
+                          </div>
+
+                          <Button
+                            type="button"
+                            variant="danger"
+                            size="sm"
+                            onClick={() => {
+                              setCustomToolSetups(customToolSetups.filter((_, i) => i !== index));
+                            }}
+                          >
+                            Delete This Setup
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        const newSetup: import('../types/config').CustomToolSetup = {
+                          id: `custom-${Date.now()}`,
+                          name: 'New Custom Setup',
+                          basedOn: 'claude',
+                          environmentVariables: {},
+                          config: {}
+                        };
+                        setCustomToolSetups([...customToolSetups, newSetup]);
+                      }}
+                    >
+                      Add Another Setup
+                    </Button>
+                  </>
+                )}
+              </div>
+            </CollapsibleCard>
+          </div>
+        )}
       </ModalBody>
 
       {/* Footer */}
-      {(activeTab === 'general' || activeTab === 'notifications' || activeTab === 'analytics') && (
+      {(activeTab === 'general' || activeTab === 'notifications' || activeTab === 'analytics' || activeTab === 'custom-tools') && (
         <ModalFooter>
           <Button
             type="button"
@@ -699,7 +894,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
           <Button
             type={activeTab === 'general' ? 'submit' : 'button'}
             form={activeTab === 'general' ? 'settings-form' : undefined}
-            onClick={activeTab === 'notifications' ? (e) => handleSubmit(e as React.FormEvent) : undefined}
+            onClick={(activeTab === 'notifications' || activeTab === 'custom-tools') ? (e) => handleSubmit(e as React.FormEvent) : undefined}
             disabled={isSubmitting}
             loading={isSubmitting}
             variant="primary"
