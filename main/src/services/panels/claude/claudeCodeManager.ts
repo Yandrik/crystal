@@ -29,6 +29,7 @@ interface ClaudeSpawnOptions {
   isResume?: boolean;
   permissionMode?: 'approve' | 'ignore';
   model?: string;
+  customToolSetupId?: string; // ID of custom tool setup to apply
 }
 
 interface ClaudeCodeProcess {
@@ -151,7 +152,17 @@ export class ClaudeCodeManager extends AbstractCliManager {
     return args;
   }
 
-  protected async getCliExecutablePath(): Promise<string> {
+  protected async getCliExecutablePath(options?: ClaudeSpawnOptions): Promise<string> {
+    // First check if a custom tool setup is specified
+    if (options?.customToolSetupId && this.configManager) {
+      const config = this.configManager.getConfig();
+      const customSetup = config?.customToolSetups?.find(s => s.id === options.customToolSetupId);
+      if (customSetup?.executablePath) {
+        this.logger?.info(`[ClaudeManager] Using custom tool setup "${customSetup.name}" executable: ${customSetup.executablePath}`);
+        return customSetup.executablePath;
+      }
+    }
+
     // Use custom claude path if configured, otherwise find it in PATH
     let claudeCommand = this.configManager?.getConfig()?.claudeExecutablePath;
     if (claudeCommand) {
@@ -241,7 +252,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
   }
 
   protected async initializeCliEnvironment(options: ClaudeSpawnOptions): Promise<{ [key: string]: string }> {
-    const { sessionId, permissionMode } = options;
+    const { sessionId, permissionMode, customToolSetupId } = options;
     
     // Get basic system environment
     const systemEnv = await this.getSystemEnvironment();
@@ -253,6 +264,16 @@ export class ClaudeCodeManager extends AbstractCliManager {
       // Add debug mode for MCP if verbose logging is enabled
       ...(this.configManager?.getConfig()?.verbose ? { MCP_DEBUG: '1' } : {})
     };
+
+    // Apply custom tool setup environment variables if a custom setup is specified
+    if (customToolSetupId && this.configManager) {
+      const config = this.configManager.getConfig();
+      const customSetup = config?.customToolSetups?.find(s => s.id === customToolSetupId);
+      if (customSetup && customSetup.environmentVariables) {
+        this.logger?.verbose(`[Claude] Applying custom tool setup "${customSetup.name}" environment variables`);
+        Object.assign(env, customSetup.environmentVariables);
+      }
+    }
 
     // Set up MCP configuration if permission approval is requested
     const defaultMode = this.configManager?.getConfig()?.defaultPermissionMode || 'ignore';

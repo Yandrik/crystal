@@ -62,6 +62,7 @@ interface CodexSpawnOptions {
   webSearch?: boolean;
   isResume?: boolean;
   resumeSessionId?: string;
+  customToolSetupId?: string; // ID of custom tool setup to apply
   [key: string]: unknown; // Allow CLI-specific options
 }
 
@@ -335,7 +336,17 @@ export class CodexManager extends AbstractCliManager {
     });
   }
 
-  protected async getCliExecutablePath(): Promise<string> {
+  protected async getCliExecutablePath(options?: CodexSpawnOptions): Promise<string> {
+    // First check if a custom tool setup is specified
+    if (options?.customToolSetupId && this.configManager) {
+      const config = this.configManager.getConfig();
+      const customSetup = config?.customToolSetups?.find(s => s.id === options.customToolSetupId);
+      if (customSetup?.executablePath) {
+        this.logger?.info(`[codex] Using custom tool setup "${customSetup.name}" executable: ${customSetup.executablePath}`);
+        return customSetup.executablePath;
+      }
+    }
+
     // Check for custom path in config
     const config = this.configManager?.getConfig();
     const customPath = config?.codexExecutablePath;
@@ -541,6 +552,15 @@ export class CodexManager extends AbstractCliManager {
     if (process.env.OPENROUTER_API_KEY) {
       env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
       this.logger?.info(`[codex-env] Setting OPENROUTER_API_KEY`);
+    }
+
+    // Apply custom tool setup environment variables if a custom setup is specified
+    if (options.customToolSetupId && this.configManager) {
+      const customSetup = config?.customToolSetups?.find(s => s.id === options.customToolSetupId);
+      if (customSetup && customSetup.environmentVariables) {
+        this.logger?.verbose(`[codex] Applying custom tool setup "${customSetup.name}" environment variables`);
+        Object.assign(env, customSetup.environmentVariables);
+      }
     }
     
     this.logger?.info(`[codex-env] Environment variables configured: ${Object.keys(env).join(', ') || 'none'}`);

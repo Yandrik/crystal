@@ -35,6 +35,7 @@ interface CreateSessionJob {
   baseBranch?: string;
   autoCommit?: boolean;
   toolType?: 'claude' | 'codex' | 'none';
+  customToolSetupId?: string; // ID of custom tool setup to use
   commitMode?: 'structured' | 'checkpoint' | 'disabled';
   commitModeSettings?: string; // JSON string of CommitModeSettings
   codexConfig?: {
@@ -239,6 +240,11 @@ export class TaskQueue {
         // Attach claudeConfig to the session object for the panel creation in events.ts
         if (claudeConfig) {
           (session as Session & { claudeConfig?: typeof claudeConfig }).claudeConfig = claudeConfig;
+        }
+
+        // Attach customToolSetupId to the session object for panel creation
+        if (job.data.customToolSetupId) {
+          (session as Session & { customToolSetupId?: string }).customToolSetupId = job.data.customToolSetupId;
         }
 
         // Only add prompt-related data if there's actually a prompt
@@ -506,7 +512,8 @@ export class TaskQueue {
       permissionMode?: 'approve' | 'ignore';
       ultrathink?: boolean;
     },
-    providedFolderId?: string
+    providedFolderId?: string,
+    customToolSetupId?: string
   ): Promise<(Bull.Job<CreateSessionJob> | { id: string; data: CreateSessionJob; status: string })[]> {
     let folderId: string | undefined = providedFolderId;
     let generatedBaseName: string | undefined;
@@ -558,7 +565,22 @@ export class TaskQueue {
     for (let i = 0; i < count; i++) {
       // Use the generated base name if no template was provided
       const templateToUse = worktreeTemplate || generatedBaseName || '';
-      jobs.push(this.sessionQueue.add({ prompt, worktreeTemplate: templateToUse, index: i, permissionMode, projectId, folderId, baseBranch, autoCommit, toolType, commitMode, commitModeSettings, codexConfig, claudeConfig }));
+      jobs.push(this.sessionQueue.add({ 
+        prompt, 
+        worktreeTemplate: templateToUse, 
+        index: i, 
+        permissionMode, 
+        projectId, 
+        folderId, 
+        baseBranch, 
+        autoCommit, 
+        toolType, 
+        commitMode, 
+        commitModeSettings, 
+        codexConfig, 
+        claudeConfig,
+        customToolSetupId
+      }));
     }
     return Promise.all(jobs);
   }

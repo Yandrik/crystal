@@ -79,6 +79,7 @@ export interface BaseAIPanelState {
 export interface ClaudePanelState extends BaseAIPanelState {
   // Claude-specific state
   permissionMode?: 'approve' | 'ignore'; // Permission mode for Claude
+  customToolSetupId?: string; // ID of custom tool setup if used
 
   // Automatic context tracking
   contextUsage?: string | null;          // Latest context usage summary (e.g., "54k/200k tokens (27%)")
@@ -92,6 +93,7 @@ export interface CodexPanelState extends BaseAIPanelState {
   approvalPolicy?: 'auto' | 'manual'; // Approval policy for tool calls
   sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access'; // Sandbox mode
   webSearch?: boolean;           // Whether web search is enabled
+  customToolSetupId?: string; // ID of custom tool setup if used
   
   // Settings to remember for new tabs
   codexConfig?: {

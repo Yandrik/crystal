@@ -664,6 +664,7 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
           let customState: CodexPanelState | ClaudePanelState | undefined = undefined;
           if (panelType === 'codex') {
             const codexConfig = session.codexConfig || {};
+            const customToolSetupId = (session as Session & { customToolSetupId?: string }).customToolSetupId;
             customState = {
               codexConfig: {
                 model: codexConfig.model || 'auto',
@@ -674,13 +675,16 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
               modelProvider: codexConfig.modelProvider || 'openai',
               approvalPolicy: codexConfig.approvalPolicy || 'auto',
               sandboxMode: codexConfig.sandboxMode || 'workspace-write',
-              webSearch: codexConfig.webSearch || false
+              webSearch: codexConfig.webSearch || false,
+              customToolSetupId
             };
           } else if (panelType === 'claude') {
             const claudeConfig = session.claudeConfig || {};
+            const customToolSetupId = (session as Session & { customToolSetupId?: string }).customToolSetupId;
             customState = {
               permissionMode: claudeConfig.permissionMode || 'ignore',
-              model: claudeConfig.model || 'auto'
+              model: claudeConfig.model || 'auto',
+              customToolSetupId
             };
           }
           

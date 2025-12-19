@@ -97,7 +97,11 @@ export abstract class AbstractCliManager extends EventEmitter {
   /**
    * Get the CLI executable path (custom or from PATH)
    */
-  protected abstract getCliExecutablePath(): Promise<string>;
+  /**
+   * Get the path to the CLI executable
+   * @param options Spawn options that may contain custom executable paths
+   */
+  protected abstract getCliExecutablePath(options?: CliSpawnOptions): Promise<string>;
 
   /**
    * Parse and handle CLI output data
@@ -158,7 +162,7 @@ export abstract class AbstractCliManager extends EventEmitter {
       const env = { ...systemEnv, ...cliEnv };
 
       // Get CLI executable path
-      const cliCommand = await this.getCliExecutablePath();
+      const cliCommand = await this.getCliExecutablePath(options);
       
       // Log the exact command being executed
       const fullCommand = `${cliCommand} ${args.join(' ')}`;
